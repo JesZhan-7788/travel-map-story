@@ -1,0 +1,10 @@
+node_modules
+.pnpm-store
+dist
+.vite
+*.tsbuildinfo
+*.log
+*.xlsx
+*.xls
+~$*
+local-imports

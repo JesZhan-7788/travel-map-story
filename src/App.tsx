@@ -32,6 +32,10 @@ type StopWithState = TripStop & {
 };
 
 type StopEdit = Partial<Omit<TripStop, "id">>;
+type LocateState = {
+  status: "idle" | "locating" | "success" | "error";
+  message: string;
+};
 
 const swipeThreshold = 72;
 
@@ -101,6 +105,29 @@ const parseCoordinatePair = (lng: string, lat: string): [number, number] | undef
   const latitude = Number(lat);
   if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return undefined;
   return [longitude, latitude];
+};
+
+const parseCoordinateText = (value: string): [number, number] | undefined => {
+  const match = value.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return undefined;
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  if (!Number.isFinite(first) || !Number.isFinite(second)) return undefined;
+  if (Math.abs(first) <= 90 && Math.abs(second) <= 180) return [second, first];
+  if (Math.abs(first) <= 180 && Math.abs(second) <= 90) return [first, second];
+  return undefined;
+};
+
+const parseCoordinatesFromMapsUrl = (value: string): [number, number] | undefined => {
+  const atMatch = value.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  if (atMatch) return [Number(atMatch[2]), Number(atMatch[1])];
+
+  try {
+    const url = new URL(value);
+    return parseCoordinateText(url.searchParams.get("query") || url.searchParams.get("q") || "");
+  } catch {
+    return undefined;
+  }
 };
 
 const getNavigationUrl = (stop: TripStop) => {
@@ -903,6 +930,10 @@ function PlanningEditorForm({
   const [latitude, setLatitude] = useState(stop.coordinates?.[1]?.toString() ?? "");
   const [notes, setNotes] = useState(stop.notes ?? "");
   const [tips, setTips] = useState(stop.tips ?? "");
+  const [locateState, setLocateState] = useState<LocateState>({
+    status: "idle",
+    message: "粘贴地址、Google Maps 链接或坐标后点击定位。",
+  });
 
   useEffect(() => {
     setName(stop.name);
@@ -915,6 +946,10 @@ function PlanningEditorForm({
     setLatitude(stop.coordinates?.[1]?.toString() ?? "");
     setNotes(stop.notes ?? "");
     setTips(stop.tips ?? "");
+    setLocateState({
+      status: "idle",
+      message: stop.coordinates ? "已使用当前地点坐标。" : "粘贴地址、Google Maps 链接或坐标后点击定位。",
+    });
   }, [stop]);
 
   const saveEdit = (event: FormEvent<HTMLFormElement>) => {
@@ -931,6 +966,53 @@ function PlanningEditorForm({
       notes: notes.trim() || undefined,
       tips: tips.trim() || undefined,
     });
+  };
+
+  const locateAddress = async () => {
+    const input = address.trim();
+    if (!input) {
+      setLocateState({ status: "error", message: "请先输入地址、Google Maps 链接或坐标。" });
+      return;
+    }
+
+    const directCoordinates = parseCoordinatesFromMapsUrl(input) || parseCoordinateText(input);
+    if (directCoordinates) {
+      setLongitude(String(directCoordinates[0]));
+      setLatitude(String(directCoordinates[1]));
+      setLocateState({ status: "success", message: "已从输入内容解析坐标，请确认后保存。" });
+      return;
+    }
+
+    setLocateState({ status: "locating", message: "正在定位..." });
+    try {
+      const response = await fetch("/api/geocode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input }),
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        label?: string;
+        address?: string;
+        coordinates?: [number, number];
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok || !result.coordinates) {
+        setLocateState({ status: "error", message: result.message || "没有找到匹配地点。" });
+        return;
+      }
+
+      setLongitude(String(result.coordinates[0]));
+      setLatitude(String(result.coordinates[1]));
+      setAddress(result.address || input);
+      setLocateState({
+        status: "success",
+        message: `${result.label || "已定位"}：${result.coordinates[1].toFixed(6)}, ${result.coordinates[0].toFixed(6)}。请确认后保存。`,
+      });
+    } catch {
+      setLocateState({ status: "error", message: "定位服务暂时不可用，请稍后再试或手动输入经纬度。" });
+    }
   };
 
   return (
@@ -983,6 +1065,14 @@ function PlanningEditorForm({
         <span>地址</span>
         <input value={address} onChange={(event) => setAddress(event.target.value)} />
       </label>
+
+      <div className={`locate-status ${locateState.status}`}>
+        <button onClick={locateAddress} type="button" disabled={locateState.status === "locating"}>
+          <MapPin size={15} />
+          {locateState.status === "locating" ? "定位中" : "定位"}
+        </button>
+        <span>{locateState.message}</span>
+      </div>
 
       <div className="editor-grid">
         <label className="editor-field">

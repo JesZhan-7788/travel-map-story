@@ -1028,6 +1028,56 @@ h1 {
   resize: vertical;
 }
 
+.locate-status {
+  align-items: center;
+  background: #f3f6f4;
+  border: 1px solid rgba(42, 56, 56, 0.1);
+  border-radius: 8px;
+  color: #52615e;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto 1fr;
+  padding: 8px;
+}
+
+.locate-status button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid rgba(47, 111, 108, 0.18);
+  border-radius: 8px;
+  color: #31544d;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.locate-status button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.locate-status span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.locate-status.success {
+  background: #eef8f1;
+  color: #31544d;
+}
+
+.locate-status.error {
+  background: #fff2ed;
+  color: #8c4a32;
+}
+
+.locate-status.locating {
+  background: #eef5f7;
+}
+
 .save-edit-button {
   align-items: center;
   background: #203e38;

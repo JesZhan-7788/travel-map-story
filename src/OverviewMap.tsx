@@ -21,6 +21,7 @@ function isCompactScreen() {
 
 export function OverviewMap({ payload }: { payload: TripPayload }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const routeSvgRef = useRef<SVGSVGElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const markerRef = useRef<Marker[]>([]);
   const [isCompact, setIsCompact] = useState(isCompactScreen);
@@ -92,31 +93,22 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
     markerRef.current.forEach((marker) => marker.remove());
     markerRef.current = [];
 
-    const renderRoute = () => {
-      if (!map.isStyleLoaded()) return;
-      if (map.getLayer("overview-route")) map.removeLayer("overview-route");
-      if (map.getSource("overview-route")) map.removeSource("overview-route");
+    const updateRouteOverlay = () => {
+      const svg = routeSvgRef.current;
+      const container = containerRef.current;
+      if (!svg || !container || routeCoordinates.length < 2) return;
 
-      if (routeCoordinates.length > 1) {
-        map.addSource("overview-route", {
-          type: "geojson",
-          data: {
-            type: "Feature",
-            properties: {},
-            geometry: { type: "LineString", coordinates: routeCoordinates },
-          },
-        });
-        map.addLayer({
-          id: "overview-route",
-          type: "line",
-          source: "overview-route",
-          paint: {
-            "line-color": "#78b82a",
-            "line-width": 5,
-            "line-opacity": 0.72,
-          },
-        });
-      }
+      const rect = container.getBoundingClientRect();
+      const points = routeCoordinates
+        .map((coordinate) => {
+          const point = map.project(coordinate);
+          return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+        })
+        .join(" ");
+
+      svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+      svg.querySelectorAll("polyline").forEach((line) => line.setAttribute("points", points));
+      container.setAttribute("data-route-rendered", "true");
     };
 
     dayPoints.forEach((point) => {
@@ -151,9 +143,25 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
       map.fitBounds(bounds, { padding: 46, maxZoom: 9.5, duration: 600 });
     }
 
-    renderRoute();
-    map.once("load", renderRoute);
-  }, [dayPoints, payload.stays, routeCoordinates]);
+    updateRouteOverlay();
+    const routeTimers = [
+      window.setTimeout(updateRouteOverlay, 80),
+      window.setTimeout(updateRouteOverlay, 700),
+    ];
+    map.on("load", updateRouteOverlay);
+    map.on("idle", updateRouteOverlay);
+    map.on("move", updateRouteOverlay);
+    map.on("zoom", updateRouteOverlay);
+    map.on("resize", updateRouteOverlay);
+    return () => {
+      routeTimers.forEach((timer) => window.clearTimeout(timer));
+      map.off("load", updateRouteOverlay);
+      map.off("idle", updateRouteOverlay);
+      map.off("move", updateRouteOverlay);
+      map.off("zoom", updateRouteOverlay);
+      map.off("resize", updateRouteOverlay);
+    };
+  }, [dayPoints, payload.stays, routeCoordinates, shouldShowMap]);
 
   return (
     <section className="overview-card" aria-label="全程位置总览">
@@ -167,6 +175,10 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
       {shouldShowMap ? (
         <div className="overview-map">
           <div className="overview-map-container" ref={containerRef} />
+          <svg className="overview-route-overlay" ref={routeSvgRef} aria-hidden="true">
+            <polyline className="overview-route-casing" fill="none" />
+            <polyline className="overview-route-line" fill="none" />
+          </svg>
         </div>
       ) : (
         <div className="overview-placeholder">

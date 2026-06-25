@@ -133,6 +133,10 @@ button {
   overflow: hidden;
 }
 
+.app-shell.no-detail {
+  grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+}
+
 .planner-panel,
 .detail-panel {
   background: #fffdf8;
@@ -384,7 +388,10 @@ h1 {
   display: grid;
   gap: 10px;
   min-height: 66px;
+  overflow: hidden;
   padding: 10px;
+  position: relative;
+  touch-action: pan-y;
   width: 100%;
 }
 
@@ -406,12 +413,51 @@ h1 {
 }
 
 .stop-main {
-  background: transparent;
+  background: #ffffff;
+  border-radius: 7px;
   gap: 12px;
   min-width: 0;
   padding: 0;
+  position: relative;
   text-align: left;
+  transition: transform 180ms ease;
   width: 100%;
+  z-index: 1;
+}
+
+.stop-row.done .stop-main {
+  background: #fbfffc;
+}
+
+.stop-row.skipped .stop-main {
+  background: #f6f6f4;
+}
+
+.swipe-hint {
+  align-items: center;
+  bottom: 0;
+  color: #ffffff;
+  display: flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 6px;
+  padding: 0 16px;
+  position: absolute;
+  top: 0;
+}
+
+.done-hint {
+  background: #2f6f6c;
+  justify-content: flex-end;
+  right: 0;
+  width: 58%;
+}
+
+.skip-hint {
+  background: #8c5a43;
+  justify-content: flex-start;
+  left: 0;
+  width: 58%;
 }
 
 .row-actions {
@@ -565,6 +611,9 @@ h1 {
 .detail-panel {
   border-left: 1px solid rgba(42, 56, 56, 0.12);
   padding: 26px 24px;
+  transition:
+    transform 220ms ease,
+    opacity 180ms ease;
 }
 
 .detail-peek {
@@ -618,6 +667,12 @@ h1 {
   line-height: 1.65;
   padding: 14px;
   white-space: pre-line;
+}
+
+.detail-section h3 {
+  color: #41504d;
+  font-size: 14px;
+  margin: 0 0 8px;
 }
 
 .status-actions {
@@ -694,6 +749,10 @@ h1 {
     border-right: 0;
     order: 1;
     padding: 18px 16px 116px;
+  }
+
+  .no-detail .planner-panel {
+    padding-bottom: 26px;
   }
 
   .map-stage {
@@ -781,6 +840,10 @@ h1 {
     padding: 0;
     position: fixed;
     width: 100%;
+  }
+
+  .detail-panel.expanded {
+    transform: translateY(0);
   }
 
   .detail-panel.collapsed .detail-body {

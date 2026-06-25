@@ -38,10 +38,12 @@ export interface TripStop {
   type: StopType;
   name: string;
   time?: string;
+  duration?: string;
   address?: string;
   coordinates?: [number, number];
   cost?: string;
   reservation?: string;
+  tips?: string;
   notes?: string;
   source?: string;
   status?: StopStatus;

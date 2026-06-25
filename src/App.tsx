@@ -17,7 +17,8 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import { trips, getTripBySlug } from "./data/trips";
 import { MapView } from "./MapView";
 import type { PlanChoice, StopType, TripPayload, TripStop, VisitStatus } from "./types";
@@ -26,6 +27,8 @@ type StopWithState = TripStop & {
   planChoice: PlanChoice;
   visitStatus: VisitStatus;
 };
+
+const swipeThreshold = 72;
 
 const planLabels: Record<PlanChoice, string> = {
   must: "必去",
@@ -86,6 +89,28 @@ const getNavigationUrl = (stop: TripStop) => {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     stop.address || stop.name,
   )}`;
+};
+
+const getDurationSuggestion = (stop: TripStop) => {
+  if (stop.duration) return stop.duration;
+
+  const suggestions: Record<StopType, string> = {
+    lodging: "办理入住/休整",
+    transport: "预留换乘缓冲",
+    attraction: "约 1-2 小时",
+    food: "约 45-90 分钟",
+    activity: "约 1-2 小时",
+    backup: "视时间决定",
+    note: "出发前确认",
+  };
+
+  return suggestions[stop.type];
+};
+
+const getAttentionText = (stop: TripStop) => {
+  if (stop.tips) return stop.tips;
+  if (stop.notes) return stop.notes;
+  return "暂无特别注意事项，出发前按天气、交通和体力再确认一次。";
 };
 
 export function App() {
@@ -156,7 +181,7 @@ function TripIndex({ onOpen }: { onOpen: (slug: string) => void }) {
 
 function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => void }) {
   const [activeDayId, setActiveDayId] = useState<string>(payload.days[0]?.id ?? "");
-  const [selectedStopId, setSelectedStopId] = useState<string | null>(payload.stops[0]?.id ?? null);
+  const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
   const [mode, setMode] = useState<"planning" | "travel">("travel");
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const [detailExpanded, setDetailExpanded] = useState(false);
@@ -165,7 +190,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
 
   useEffect(() => {
     setActiveDayId(payload.days[0]?.id ?? "");
-    setSelectedStopId(payload.stops[0]?.id ?? null);
+    setSelectedStopId(null);
     setMode("travel");
     setMobileView("list");
     setDetailExpanded(false);
@@ -196,7 +221,9 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
   }, [activeDayId, payload.stops, planChoices, visitStatuses]);
 
   const activeDay = payload.days.find((day) => day.id === activeDayId);
-  const selectedStop = activeStops.find((stop) => stop.id === selectedStopId) ?? activeStops[0];
+  const selectedStop = selectedStopId
+    ? activeStops.find((stop) => stop.id === selectedStopId) ?? null
+    : null;
   const actionableStops = activeStops.filter((stop) => stop.planChoice !== "dropped");
   const completedCount = actionableStops.filter((stop) => stop.visitStatus === "done").length;
   const skippedCount = actionableStops.filter((stop) => stop.visitStatus === "skipped").length;
@@ -222,7 +249,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
   };
 
   return (
-    <main className={`app-shell mobile-${mobileView}`}>
+    <main className={`app-shell mobile-${mobileView} ${selectedStop ? "has-detail" : "no-detail"}`}>
       <section className="planner-panel" aria-label="行程时间线">
         <button className="back-button" onClick={onBack} type="button">
           <ArrowLeft size={16} />
@@ -264,7 +291,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
               key={day.id}
               onClick={() => {
                 setActiveDayId(day.id);
-                setSelectedStopId(payload.stops.find((stop) => stop.dayId === day.id)?.id ?? null);
+                setSelectedStopId(null);
                 setDetailExpanded(false);
               }}
               role="tab"
@@ -304,7 +331,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
             skippedCount={skippedCount}
             total={progressTotal}
             onSelectNext={() => {
-              if (nextStop) selectStop(nextStop.id, false);
+              if (nextStop) selectStop(nextStop.id, true);
             }}
           />
         ) : null}
@@ -321,7 +348,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
               key={stop.id}
               mode={mode}
               stop={stop}
-              onSelect={() => selectStop(stop.id, false)}
+              onSelect={() => selectStop(stop.id, true)}
               onSetVisitStatus={(visitStatus) => setVisitStatus(stop.id, visitStatus)}
             />
           ))}
@@ -334,7 +361,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
           options={payload.options}
           selectedStopId={selectedStop?.id ?? null}
           stops={activeStops}
-          onSelectStop={(stopId) => selectStop(stopId, false)}
+          onSelectStop={(stopId) => selectStop(stopId, true)}
         />
       </section>
 
@@ -414,13 +441,83 @@ function StopRow({
   onSelect: () => void;
   onSetVisitStatus: (visitStatus: VisitStatus) => void;
 }) {
+  const [dragX, setDragX] = useState(0);
+  const startPoint = useRef<{ x: number; y: number } | null>(null);
+  const dragXRef = useRef(0);
+  const ignoreClickRef = useRef(false);
+  const swiping = mode === "travel" && stop.planChoice !== "dropped";
+
+  const beginSwipe = (event: PointerEvent<HTMLElement>) => {
+    if (!swiping) return;
+    startPoint.current = { x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveSwipe = (event: PointerEvent<HTMLElement>) => {
+    if (!startPoint.current || !swiping) return;
+    const deltaX = event.clientX - startPoint.current.x;
+    const deltaY = event.clientY - startPoint.current.y;
+    if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 10) return;
+    const nextDragX = Math.max(-112, Math.min(112, deltaX));
+    dragXRef.current = nextDragX;
+    setDragX(nextDragX);
+  };
+
+  const endSwipe = (event: PointerEvent<HTMLElement>) => {
+    if (!startPoint.current || !swiping) return;
+    const finalX = dragXRef.current;
+    startPoint.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    dragXRef.current = 0;
+    setDragX(0);
+
+    if (finalX <= -swipeThreshold) {
+      onSetVisitStatus(stop.visitStatus === "done" ? "pending" : "done");
+      ignoreClickRef.current = true;
+    } else if (finalX >= swipeThreshold) {
+      onSetVisitStatus(stop.visitStatus === "skipped" ? "pending" : "skipped");
+      ignoreClickRef.current = true;
+    }
+
+    window.setTimeout(() => {
+      ignoreClickRef.current = false;
+    }, 200);
+  };
+
+  const stopStyle = {
+    transform: `translateX(${dragX}px)`,
+  };
+
   return (
     <article
       className={`stop-row ${isActive ? "active" : ""} ${
         stop.planChoice === "dropped" ? "dropped" : ""
-      } ${stop.visitStatus}`}
+      } ${stop.visitStatus} ${dragX < -16 ? "swiping-done" : ""} ${
+        dragX > 16 ? "swiping-skip" : ""
+      }`}
+      onPointerCancel={endSwipe}
+      onPointerDown={beginSwipe}
+      onPointerMove={moveSwipe}
+      onPointerUp={endSwipe}
     >
-      <button className="stop-main" onClick={onSelect} type="button">
+      <div className="swipe-hint done-hint" aria-hidden="true">
+        <CheckCircle2 size={16} />
+        完成
+      </div>
+      <div className="swipe-hint skip-hint" aria-hidden="true">
+        <XCircle size={16} />
+        跳过
+      </div>
+
+      <button
+        className="stop-main"
+        onClick={() => {
+          if (ignoreClickRef.current) return;
+          if (Math.abs(dragX) < 8) onSelect();
+        }}
+        style={stopStyle}
+        type="button"
+      >
         <span className={`type-dot ${stop.type}`}>{typeIcons[stop.type]}</span>
         <span className="stop-copy">
           <strong>{stop.name}</strong>
@@ -430,29 +527,6 @@ function StopRow({
           </small>
         </span>
       </button>
-
-      {mode === "travel" && stop.planChoice !== "dropped" ? (
-        <div className="row-actions" aria-label={`${stop.name} 打卡操作`}>
-          <button
-            className={stop.visitStatus === "done" ? "active" : ""}
-            onClick={() => onSetVisitStatus(stop.visitStatus === "done" ? "pending" : "done")}
-            type="button"
-          >
-            <CheckCircle2 size={15} />
-            完成
-          </button>
-          <button
-            className={stop.visitStatus === "skipped" ? "active muted" : "muted"}
-            onClick={() =>
-              onSetVisitStatus(stop.visitStatus === "skipped" ? "pending" : "skipped")
-            }
-            type="button"
-          >
-            <XCircle size={15} />
-            跳过
-          </button>
-        </div>
-      ) : null}
     </article>
   );
 }
@@ -505,11 +579,19 @@ function StopDetail({
           {stop.time ? (
             <InfoItem icon={<Clock3 size={16} />} label="时间" value={stop.time} />
           ) : null}
+          <InfoItem
+            icon={<Clock3 size={16} />}
+            label="建议"
+            value={getDurationSuggestion(stop)}
+          />
           <InfoItem icon={typeIcons[stop.type]} label="类型" value={typeLabels[stop.type]} />
           <InfoItem icon={<ShieldCheck size={16} />} label="状态" value={visitLabels[stop.visitStatus]} />
         </div>
 
-        {stop.notes ? <p className="notes">{stop.notes}</p> : null}
+        <section className="detail-section">
+          <h3>注意事项</h3>
+          <p className="notes">{getAttentionText(stop)}</p>
+        </section>
 
         {mode === "travel" ? (
           <div className="status-actions travel-actions" aria-label="旅行进度">

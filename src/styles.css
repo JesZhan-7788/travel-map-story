@@ -272,18 +272,27 @@ h1 {
   font-size: 18px;
 }
 
-.overview-heading > span {
+.overview-toggle {
+  align-items: center;
   background: #edf1ec;
+  border: 0;
   border-radius: 999px;
   color: #31544d;
+  cursor: pointer;
+  display: inline-flex;
   flex: 0 0 auto;
   font-size: 12px;
+  gap: 6px;
   font-weight: 800;
   padding: 6px 10px;
 }
 
+.overview-card.expanded .overview-toggle svg {
+  transform: rotate(180deg);
+}
+
 .overview-map {
-  height: 240px;
+  height: 220px;
   position: relative;
 }
 
@@ -303,15 +312,15 @@ h1 {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-opacity: 0.92;
-  stroke-width: 12;
+  stroke-width: 7;
 }
 
 .overview-route-line {
-  stroke: #62b51f;
+  stroke: #4f9f1d;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-opacity: 0.96;
-  stroke-width: 7;
+  stroke-opacity: 0.9;
+  stroke-width: 3.5;
 }
 
 .overview-placeholder {
@@ -356,18 +365,18 @@ h1 {
   color: #173f36;
   display: grid;
   gap: 1px;
-  min-width: 62px;
-  padding: 5px 7px;
+  min-width: 54px;
+  padding: 4px 6px;
   text-align: center;
 }
 
 .overview-day-marker strong {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.1;
 }
 
 .overview-day-marker span {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.1;
 }
 
@@ -384,6 +393,22 @@ h1 {
   height: 28px;
   justify-content: center;
   width: 28px;
+}
+
+.add-stop-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px dashed rgba(47, 111, 108, 0.38);
+  border-radius: 8px;
+  color: #31544d;
+  cursor: pointer;
+  display: flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 14px;
+  min-height: 42px;
+  width: 100%;
 }
 
 .day-tabs button {
@@ -940,6 +965,243 @@ h1 {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.planning-editor {
+  border-top: 1px solid rgba(42, 56, 56, 0.1);
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.editor-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-heading h3 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.editor-heading span {
+  background: #edf1ec;
+  border-radius: 999px;
+  color: #31544d;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+}
+
+.editor-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.editor-field {
+  display: grid;
+  gap: 5px;
+}
+
+.editor-field span {
+  color: #697875;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.editor-field input,
+.editor-field select,
+.editor-field textarea {
+  background: #ffffff;
+  border: 1px solid rgba(42, 56, 56, 0.14);
+  border-radius: 8px;
+  color: #1d2529;
+  min-height: 38px;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.editor-field textarea {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.save-edit-button {
+  align-items: center;
+  background: #203e38;
+  border: 0;
+  border-radius: 8px;
+  color: #f7f0e6;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
+}
+
+.travel-transition {
+  align-items: center;
+  background: rgba(246, 243, 238, 0.86);
+  backdrop-filter: blur(10px);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 12;
+}
+
+.transition-card {
+  background: #fffdf8;
+  border: 1px solid rgba(42, 56, 56, 0.12);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(31, 34, 30, 0.2);
+  max-width: 360px;
+  overflow: hidden;
+  text-align: center;
+  width: min(100%, 360px);
+}
+
+.transition-card p {
+  color: #52756d;
+  font-size: 13px;
+  font-weight: 900;
+  margin: 16px 0 5px;
+}
+
+.transition-card h2 {
+  font-size: 24px;
+  margin: 0 18px 8px;
+}
+
+.transition-card > span {
+  color: #60706d;
+  display: block;
+  font-weight: 800;
+  margin: 0 18px 20px;
+}
+
+.transition-scene {
+  background: linear-gradient(#bfe7f4 0 58%, #f4e5c4 58% 100%);
+  height: 190px;
+  overflow: hidden;
+  position: relative;
+}
+
+.transition-sky {
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  height: 28px;
+  left: 30px;
+  position: absolute;
+  top: 34px;
+  width: 110px;
+}
+
+.transition-track {
+  background: #9fb2b4;
+  bottom: 42px;
+  height: 6px;
+  left: 0;
+  position: absolute;
+  transform: rotate(-2deg);
+  width: 110%;
+}
+
+.buddy {
+  animation: buddy-bounce 900ms ease-in-out infinite alternate;
+  background: #ffffff;
+  border: 4px solid #1d2529;
+  border-radius: 45% 45% 38% 38%;
+  bottom: 34px;
+  height: 80px;
+  position: absolute;
+  width: 70px;
+}
+
+.buddy-yellow {
+  background: #e9c879;
+  left: 88px;
+}
+
+.buddy-white {
+  animation-delay: 180ms;
+  bottom: 42px;
+  left: 162px;
+}
+
+.buddy-ear {
+  background: inherit;
+  border: 4px solid #1d2529;
+  border-radius: 999px;
+  height: 24px;
+  position: absolute;
+  top: -10px;
+  width: 24px;
+}
+
+.buddy-ear.left {
+  left: -9px;
+}
+
+.buddy-ear.right {
+  right: -9px;
+}
+
+.buddy-face::before,
+.buddy-face::after {
+  background: #1d2529;
+  border-radius: 999px;
+  content: "";
+  height: 6px;
+  position: absolute;
+  top: 31px;
+  width: 6px;
+}
+
+.buddy-face::before {
+  left: 22px;
+}
+
+.buddy-face::after {
+  right: 22px;
+}
+
+.tiny-suitcase {
+  background: #5d746d;
+  border: 4px solid #1d2529;
+  border-radius: 8px;
+  bottom: 35px;
+  height: 52px;
+  left: 238px;
+  position: absolute;
+  width: 36px;
+}
+
+.tiny-suitcase::before {
+  border: 4px solid #1d2529;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  content: "";
+  height: 12px;
+  left: 6px;
+  position: absolute;
+  top: -18px;
+  width: 16px;
+}
+
+@keyframes buddy-bounce {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-9px);
+  }
+}
+
 .state-screen {
   align-items: center;
   background: #f6f3ee;
@@ -1055,6 +1317,36 @@ h1 {
 
   .day-tabs button {
     flex: 0 0 118px;
+  }
+
+  .overview-heading {
+    padding: 12px;
+  }
+
+  .overview-map {
+    height: 190px;
+  }
+
+  .overview-route-casing {
+    stroke-width: 6;
+  }
+
+  .overview-route-line {
+    stroke-width: 3;
+  }
+
+  .overview-day-marker {
+    border-width: 1.5px;
+    min-width: 48px;
+    padding: 3px 5px;
+  }
+
+  .overview-day-marker strong {
+    font-size: 10px;
+  }
+
+  .overview-day-marker span {
+    font-size: 9px;
   }
 
   .travel-progress {

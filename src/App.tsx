@@ -10,7 +10,9 @@ import {
   Map,
   MapPin,
   Navigation,
+  Plus,
   Route,
+  Save,
   ShieldCheck,
   TrainFront,
   Utensils,
@@ -18,7 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent } from "react";
+import type { FormEvent, PointerEvent } from "react";
 import { trips, getTripBySlug } from "./data/trips";
 import { MapView } from "./MapView";
 import { OverviewMap } from "./OverviewMap";
@@ -28,6 +30,8 @@ type StopWithState = TripStop & {
   planChoice: PlanChoice;
   visitStatus: VisitStatus;
 };
+
+type StopEdit = Partial<Omit<TripStop, "id">>;
 
 const swipeThreshold = 72;
 
@@ -82,6 +86,21 @@ const readStoredRecord = <T extends string>(key: string): Record<string, T> => {
   } catch {
     return {};
   }
+};
+
+const readStoredValue = <T,>(key: string, fallback: T): T => {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? JSON.stringify(fallback)) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const parseCoordinatePair = (lng: string, lat: string): [number, number] | undefined => {
+  const longitude = Number(lng);
+  const latitude = Number(lat);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return undefined;
+  return [longitude, latitude];
 };
 
 const getNavigationUrl = (stop: TripStop) => {
@@ -201,18 +220,27 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
   const [detailExpanded, setDetailExpanded] = useState(false);
   const [planChoices, setPlanChoices] = useState<Record<string, PlanChoice>>({});
   const [visitStatuses, setVisitStatuses] = useState<Record<string, VisitStatus>>({});
+  const [stopEdits, setStopEdits] = useState<Record<string, StopEdit>>({});
+  const [customStops, setCustomStops] = useState<TripStop[]>([]);
+  const [storageReady, setStorageReady] = useState(false);
+  const [showTravelTransition, setShowTravelTransition] = useState(false);
 
   useEffect(() => {
+    setStorageReady(false);
     setActiveDayId(payload.days[0]?.id ?? "");
     setSelectedStopId(null);
     setMode("travel");
     setMobileView("list");
     setDetailExpanded(false);
+    setShowTravelTransition(false);
     setPlanChoices({
       ...readStoredRecord<PlanChoice>(`trip-status:${payload.trip.id}`),
       ...readStoredRecord<PlanChoice>(`trip-plan-choice:${payload.trip.id}`),
     });
     setVisitStatuses(readStoredRecord<VisitStatus>(`trip-visit-status:${payload.trip.id}`));
+    setStopEdits(readStoredValue<Record<string, StopEdit>>(`trip-stop-edits:${payload.trip.id}`, {}));
+    setCustomStops(readStoredValue<TripStop[]>(`trip-custom-stops:${payload.trip.id}`, []));
+    setStorageReady(true);
   }, [payload]);
 
   useEffect(() => {
@@ -226,15 +254,28 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
   }, []);
 
   useEffect(() => {
+    if (!storageReady) return;
     localStorage.setItem(`trip-plan-choice:${payload.trip.id}`, JSON.stringify(planChoices));
-  }, [payload.trip.id, planChoices]);
+  }, [payload.trip.id, planChoices, storageReady]);
 
   useEffect(() => {
+    if (!storageReady) return;
     localStorage.setItem(`trip-visit-status:${payload.trip.id}`, JSON.stringify(visitStatuses));
-  }, [payload.trip.id, visitStatuses]);
+  }, [payload.trip.id, storageReady, visitStatuses]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    localStorage.setItem(`trip-stop-edits:${payload.trip.id}`, JSON.stringify(stopEdits));
+  }, [payload.trip.id, stopEdits, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    localStorage.setItem(`trip-custom-stops:${payload.trip.id}`, JSON.stringify(customStops));
+  }, [customStops, payload.trip.id, storageReady]);
 
   const activeStops = useMemo<StopWithState[]>(() => {
-    return payload.stops
+    return [...payload.stops, ...customStops]
+      .map((stop) => ({ ...stop, ...(stopEdits[stop.id] ?? {}) }))
       .filter((stop) => stop.dayId === activeDayId)
       .map((stop) => ({
         ...stop,
@@ -242,7 +283,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
         visitStatus: visitStatuses[stop.id] ?? "pending",
       }))
       .sort((a, b) => a.sequence - b.sequence);
-  }, [activeDayId, payload.stops, planChoices, visitStatuses]);
+  }, [activeDayId, customStops, payload.stops, planChoices, stopEdits, visitStatuses]);
 
   const activeDay = payload.days.find((day) => day.id === activeDayId);
   const activeStay = payload.stays?.find((stay) => stay.dayId === activeDayId) ?? null;
@@ -260,6 +301,9 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
     activeStops.find(
       (stop) => stop.planChoice !== "dropped" && stop.visitStatus === "pending",
     ) ?? null;
+  const visibleStops = mode === "travel"
+    ? activeStops.filter((stop) => stop.planChoice !== "dropped")
+    : activeStops;
   const shouldRenderMap = !isMobileScreen || mobileView === "map";
 
   const selectStop = (stopId: string, expand = false) => {
@@ -273,6 +317,48 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
 
   const setVisitStatus = (stopId: string, visitStatus: VisitStatus) => {
     setVisitStatuses((current) => ({ ...current, [stopId]: visitStatus }));
+  };
+
+  const saveStopEdit = (stopId: string, edit: StopEdit) => {
+    setCustomStops((current) =>
+      current.map((stop) => (stop.id === stopId ? { ...stop, ...edit } : stop)),
+    );
+    if (!customStops.some((stop) => stop.id === stopId)) {
+      setStopEdits((current) => ({ ...current, [stopId]: { ...current[stopId], ...edit } }));
+    }
+    if (edit.dayId) setActiveDayId(edit.dayId);
+  };
+
+  const addCustomStop = () => {
+    const sequence =
+      Math.max(0, ...activeStops.map((stop) => stop.sequence), ...customStops.map((stop) => stop.sequence)) + 1;
+    const id = `custom-${Date.now()}`;
+    const nextStop: TripStop = {
+      id,
+      dayId: activeDayId,
+      sequence,
+      type: "attraction",
+      name: "新增地点",
+      time: "待定",
+      notes: "在规划模式里补充地址、坐标和注意事项。",
+      status: "must",
+    };
+    setCustomStops((current) => [...current, nextStop]);
+    setPlanChoices((current) => ({ ...current, [id]: "must" }));
+    setSelectedStopId(id);
+    setDetailExpanded(true);
+  };
+
+  const switchMode = (nextMode: "planning" | "travel") => {
+    if (nextMode === "travel" && mode === "planning") {
+      setShowTravelTransition(true);
+      window.setTimeout(() => setShowTravelTransition(false), 1100);
+    }
+    if (nextMode === "travel" && selectedStop?.planChoice === "dropped") {
+      setSelectedStopId(null);
+      setDetailExpanded(false);
+    }
+    setMode(nextMode);
   };
 
   return (
@@ -294,7 +380,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
           <div className="mode-switch" aria-label="切换使用模式">
             <button
               className={mode === "travel" ? "active" : ""}
-              onClick={() => setMode("travel")}
+              onClick={() => switchMode("travel")}
               type="button"
             >
               <Navigation size={16} />
@@ -302,7 +388,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
             </button>
             <button
               className={mode === "planning" ? "active" : ""}
-              onClick={() => setMode("planning")}
+              onClick={() => switchMode("planning")}
               type="button"
             >
               <Route size={16} />
@@ -372,9 +458,21 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
 
         {activeStay ? <StayCard stay={activeStay} /> : null}
 
+        {mode === "planning" ? (
+          <button className="add-stop-button" onClick={addCustomStop} type="button">
+            <Plus size={16} />
+            新增地点
+          </button>
+        ) : null}
+
         <div className="timeline">
-          {activeStops.map((stop) => {
-            const followingLegs = activeLegs.filter((leg) => leg.fromStopId === stop.id);
+          {visibleStops.map((stop) => {
+            const visibleStopIds = new Set(visibleStops.map((item) => item.id));
+            const followingLegs = activeLegs.filter(
+              (leg) =>
+                leg.fromStopId === stop.id &&
+                (!leg.toStopId || visibleStopIds.has(leg.toStopId)),
+            );
             return (
               <div className="timeline-item" key={stop.id}>
                 <StopRow
@@ -399,7 +497,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
             key={mobileView}
             options={payload.options}
             selectedStopId={selectedStop?.id ?? null}
-            stops={activeStops}
+            stops={visibleStops}
             onSelectStop={(stopId) => selectStop(stopId, true)}
           />
         </section>
@@ -407,6 +505,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
 
       {selectedStop ? (
         <StopDetail
+          days={payload.days}
           expanded={detailExpanded}
           mode={mode}
           stop={selectedStop}
@@ -414,9 +513,55 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
           onSetExpanded={setDetailExpanded}
           onSetPlanChoice={(planChoice) => setPlanChoice(selectedStop.id, planChoice)}
           onSetVisitStatus={(visitStatus) => setVisitStatus(selectedStop.id, visitStatus)}
+          onSaveStop={saveStopEdit}
+        />
+      ) : null}
+
+      {showTravelTransition ? (
+        <TravelTransition
+          dayLabel={activeDay?.label ?? ""}
+          nextStopName={nextStop?.name ?? "自由探索"}
+          tripTitle={payload.trip.title}
         />
       ) : null}
     </main>
+  );
+}
+
+function TravelTransition({
+  dayLabel,
+  nextStopName,
+  tripTitle,
+}: {
+  dayLabel: string;
+  nextStopName: string;
+  tripTitle: string;
+}) {
+  return (
+    <div className="travel-transition" role="status" aria-live="polite">
+      <div className="transition-card">
+        <div className="transition-scene" aria-hidden="true">
+          <div className="transition-sky" />
+          <div className="transition-track" />
+          <div className="buddy buddy-yellow">
+            <span className="buddy-ear left" />
+            <span className="buddy-ear right" />
+            <span className="buddy-face" />
+          </div>
+          <div className="buddy buddy-white">
+            <span className="buddy-ear left" />
+            <span className="buddy-ear right" />
+            <span className="buddy-face" />
+          </div>
+          <div className="tiny-suitcase" />
+        </div>
+        <p>出发啦</p>
+        <h2>{tripTitle}</h2>
+        <span>
+          {dayLabel} · 下一站：{nextStopName}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -626,6 +771,7 @@ function StopRow({
 }
 
 function StopDetail({
+  days,
   expanded,
   mode,
   stop,
@@ -633,7 +779,9 @@ function StopDetail({
   onSetExpanded,
   onSetPlanChoice,
   onSetVisitStatus,
+  onSaveStop,
 }: {
+  days: TripPayload["days"];
   expanded: boolean;
   mode: "planning" | "travel";
   stop: StopWithState;
@@ -641,6 +789,7 @@ function StopDetail({
   onSetExpanded: (expanded: boolean) => void;
   onSetPlanChoice: (planChoice: PlanChoice) => void;
   onSetVisitStatus: (visitStatus: VisitStatus) => void;
+  onSaveStop: (stopId: string, edit: StopEdit) => void;
 }) {
   return (
     <aside className={`detail-panel ${expanded ? "expanded" : "collapsed"}`} aria-label="地点详情">
@@ -734,8 +883,140 @@ function StopDetail({
             </button>
           </div>
         )}
+
+        {mode === "planning" ? (
+          <PlanningEditorForm days={days} stop={stop} onSaveStop={onSaveStop} />
+        ) : null}
       </div>
     </aside>
+  );
+}
+
+function PlanningEditorForm({
+  days,
+  stop,
+  onSaveStop,
+}: {
+  days: TripPayload["days"];
+  stop: StopWithState;
+  onSaveStop: (stopId: string, edit: StopEdit) => void;
+}) {
+  const [name, setName] = useState(stop.name);
+  const [type, setType] = useState<StopType>(stop.type);
+  const [dayId, setDayId] = useState(stop.dayId);
+  const [time, setTime] = useState(stop.time ?? "");
+  const [duration, setDuration] = useState(stop.duration ?? "");
+  const [address, setAddress] = useState(stop.address ?? "");
+  const [longitude, setLongitude] = useState(stop.coordinates?.[0]?.toString() ?? "");
+  const [latitude, setLatitude] = useState(stop.coordinates?.[1]?.toString() ?? "");
+  const [notes, setNotes] = useState(stop.notes ?? "");
+  const [tips, setTips] = useState(stop.tips ?? "");
+
+  useEffect(() => {
+    setName(stop.name);
+    setType(stop.type);
+    setDayId(stop.dayId);
+    setTime(stop.time ?? "");
+    setDuration(stop.duration ?? "");
+    setAddress(stop.address ?? "");
+    setLongitude(stop.coordinates?.[0]?.toString() ?? "");
+    setLatitude(stop.coordinates?.[1]?.toString() ?? "");
+    setNotes(stop.notes ?? "");
+    setTips(stop.tips ?? "");
+  }, [stop]);
+
+  const saveEdit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const coordinates = parseCoordinatePair(longitude.trim(), latitude.trim());
+    onSaveStop(stop.id, {
+      name: name.trim() || "未命名地点",
+      type,
+      dayId,
+      time: time.trim() || undefined,
+      duration: duration.trim() || undefined,
+      address: address.trim() || undefined,
+      coordinates,
+      notes: notes.trim() || undefined,
+      tips: tips.trim() || undefined,
+    });
+  };
+
+  return (
+    <form className="planning-editor" onSubmit={saveEdit}>
+      <div className="editor-heading">
+        <h3>编辑规划</h3>
+        <span>{stop.coordinates ? "已定位" : "未定位"}</span>
+      </div>
+
+      <label className="editor-field editor-field-wide">
+        <span>名称</span>
+        <input value={name} onChange={(event) => setName(event.target.value)} />
+      </label>
+
+      <div className="editor-grid">
+        <label className="editor-field">
+          <span>类型</span>
+          <select value={type} onChange={(event) => setType(event.target.value as StopType)}>
+            {(Object.keys(typeLabels) as StopType[]).map((item) => (
+              <option key={item} value={item}>
+                {typeLabels[item]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="editor-field">
+          <span>Day</span>
+          <select value={dayId} onChange={(event) => setDayId(event.target.value)}>
+            {days.map((day) => (
+              <option key={day.id} value={day.id}>
+                {day.label} · {day.city}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="editor-grid">
+        <label className="editor-field">
+          <span>时间</span>
+          <input value={time} onChange={(event) => setTime(event.target.value)} placeholder="上午 / 14:00" />
+        </label>
+        <label className="editor-field">
+          <span>游玩时长</span>
+          <input value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="约 1 小时" />
+        </label>
+      </div>
+
+      <label className="editor-field editor-field-wide">
+        <span>地址</span>
+        <input value={address} onChange={(event) => setAddress(event.target.value)} />
+      </label>
+
+      <div className="editor-grid">
+        <label className="editor-field">
+          <span>经度</span>
+          <input inputMode="decimal" value={longitude} onChange={(event) => setLongitude(event.target.value)} />
+        </label>
+        <label className="editor-field">
+          <span>纬度</span>
+          <input inputMode="decimal" value={latitude} onChange={(event) => setLatitude(event.target.value)} />
+        </label>
+      </div>
+
+      <label className="editor-field editor-field-wide">
+        <span>备注</span>
+        <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+      </label>
+      <label className="editor-field editor-field-wide">
+        <span>注意事项</span>
+        <textarea value={tips} onChange={(event) => setTips(event.target.value)} rows={3} />
+      </label>
+
+      <button className="save-edit-button" type="submit">
+        <Save size={16} />
+        保存到本机
+      </button>
+    </form>
   );
 }
 

@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import maplibregl, { Map, Marker } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TripPayload } from "./types";
@@ -26,6 +27,7 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
   const markerRef = useRef<Marker[]>([]);
   const [isCompact, setIsCompact] = useState(isCompactScreen);
   const [shouldShowMap, setShouldShowMap] = useState(() => !isCompactScreen());
+  const isExpanded = shouldShowMap;
 
   const dayPoints = useMemo(() => {
     return payload.days
@@ -140,7 +142,7 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
         (current, coordinate) => current.extend(coordinate),
         new maplibregl.LngLatBounds(routeCoordinates[0], routeCoordinates[0]),
       );
-      map.fitBounds(bounds, { padding: 46, maxZoom: 9.5, duration: 600 });
+      map.fitBounds(bounds, { padding: 42, maxZoom: 9.5, duration: 520 });
     }
 
     updateRouteOverlay();
@@ -164,20 +166,41 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
   }, [dayPoints, payload.stays, routeCoordinates, shouldShowMap]);
 
   return (
-    <section className="overview-card" aria-label="全程位置总览">
+    <section className={`overview-card ${isExpanded ? "expanded" : "collapsed"}`} aria-label="全程位置总览">
       <div className="overview-heading">
         <div>
           <p className="eyebrow">Route Overview</p>
           <h2>全程位置总览</h2>
         </div>
-        <span>{payload.days.length} 天路线</span>
+        <button
+          className="overview-toggle"
+          onClick={() => setShouldShowMap((current) => !current)}
+          type="button"
+        >
+          <span>{isExpanded ? "收起" : "展开"}</span>
+          <strong>{payload.days.length} 天路线</strong>
+          <ChevronDown size={16} />
+        </button>
       </div>
       {shouldShowMap ? (
         <div className="overview-map">
           <div className="overview-map-container" ref={containerRef} />
           <svg className="overview-route-overlay" ref={routeSvgRef} aria-hidden="true">
+            <defs>
+              <marker
+                id="overview-arrow"
+                markerHeight="7"
+                markerWidth="7"
+                orient="auto"
+                refX="6.2"
+                refY="3.5"
+                viewBox="0 0 7 7"
+              >
+                <path d="M0,0 L7,3.5 L0,7 Z" fill="#4f9f1d" />
+              </marker>
+            </defs>
             <polyline className="overview-route-casing" fill="none" />
-            <polyline className="overview-route-line" fill="none" />
+            <polyline className="overview-route-line" fill="none" markerMid="url(#overview-arrow)" />
           </svg>
         </div>
       ) : (
@@ -190,7 +213,7 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
             ))}
           </div>
           <button type="button" onClick={() => setShouldShowMap(true)}>
-            {isCompact ? "打开总览地图" : "显示总览地图"}
+            {isCompact ? "展开总览地图" : "显示总览地图"}
           </button>
         </div>
       )}

@@ -541,19 +541,11 @@ function TravelTransition({
     <div className="travel-transition" role="status" aria-live="polite">
       <div className="transition-card">
         <div className="transition-scene" aria-hidden="true">
-          <div className="transition-sky" />
-          <div className="transition-track" />
-          <div className="buddy buddy-yellow">
-            <span className="buddy-ear left" />
-            <span className="buddy-ear right" />
-            <span className="buddy-face" />
-          </div>
-          <div className="buddy buddy-white">
-            <span className="buddy-ear left" />
-            <span className="buddy-ear right" />
-            <span className="buddy-face" />
-          </div>
-          <div className="tiny-suitcase" />
+          <img
+            alt=""
+            className="transition-image"
+            src="/trips/wakayama/transition-buddies.png"
+          />
         </div>
         <p>出发啦</p>
         <h2>{tripTitle}</h2>

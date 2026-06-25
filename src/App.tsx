@@ -73,6 +73,9 @@ const navigateTo = (path: string) => {
   window.dispatchEvent(new PopStateEvent("popstate"));
 };
 
+const isMobileViewport = () =>
+  typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+
 const readStoredRecord = <T extends string>(key: string): Record<string, T> => {
   try {
     return JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, T>;
@@ -194,6 +197,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
   const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
   const [mode, setMode] = useState<"planning" | "travel">("travel");
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
+  const [isMobileScreen, setIsMobileScreen] = useState(isMobileViewport);
   const [detailExpanded, setDetailExpanded] = useState(false);
   const [planChoices, setPlanChoices] = useState<Record<string, PlanChoice>>({});
   const [visitStatuses, setVisitStatuses] = useState<Record<string, VisitStatus>>({});
@@ -210,6 +214,16 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
     });
     setVisitStatuses(readStoredRecord<VisitStatus>(`trip-visit-status:${payload.trip.id}`));
   }, [payload]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 760px)");
+    const syncViewport = () => setIsMobileScreen(query.matches);
+
+    syncViewport();
+    query.addEventListener("change", syncViewport);
+    return () => query.removeEventListener("change", syncViewport);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(`trip-plan-choice:${payload.trip.id}`, JSON.stringify(planChoices));
@@ -246,6 +260,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
     activeStops.find(
       (stop) => stop.planChoice !== "dropped" && stop.visitStatus === "pending",
     ) ?? null;
+  const shouldRenderMap = !isMobileScreen || mobileView === "map";
 
   const selectStop = (stopId: string, expand = false) => {
     setSelectedStopId(stopId);
@@ -378,15 +393,17 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
         </div>
       </section>
 
-      <section className="map-stage" aria-label="地图">
-        <MapView
-          key={mobileView}
-          options={payload.options}
-          selectedStopId={selectedStop?.id ?? null}
-          stops={activeStops}
-          onSelectStop={(stopId) => selectStop(stopId, true)}
-        />
-      </section>
+      {shouldRenderMap ? (
+        <section className="map-stage" aria-label="地图">
+          <MapView
+            key={mobileView}
+            options={payload.options}
+            selectedStopId={selectedStop?.id ?? null}
+            stops={activeStops}
+            onSelectStop={(stopId) => selectStop(stopId, true)}
+          />
+        </section>
+      ) : null}
 
       {selectedStop ? (
         <StopDetail

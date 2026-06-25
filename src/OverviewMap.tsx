@@ -1,5 +1,5 @@
 import maplibregl, { Map, Marker } from "maplibre-gl";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TripPayload } from "./types";
 
 const overviewStyle: maplibregl.StyleSpecification = {
@@ -9,16 +9,22 @@ const overviewStyle: maplibregl.StyleSpecification = {
       type: "raster",
       tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
+      attribution: "OpenStreetMap contributors",
     },
   },
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 };
 
+function isCompactScreen() {
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+}
+
 export function OverviewMap({ payload }: { payload: TripPayload }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const markerRef = useRef<Marker[]>([]);
+  const [isCompact, setIsCompact] = useState(isCompactScreen);
+  const [shouldShowMap, setShouldShowMap] = useState(() => !isCompactScreen());
 
   const dayPoints = useMemo(() => {
     return payload.days
@@ -47,7 +53,20 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
   }, [payload.legs, payload.stops]);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 760px)");
+    const syncScreen = () => {
+      setIsCompact(query.matches);
+      if (!query.matches) setShouldShowMap(true);
+    };
+
+    syncScreen();
+    query.addEventListener("change", syncScreen);
+    return () => query.removeEventListener("change", syncScreen);
+  }, []);
+
+  useEffect(() => {
+    if (!shouldShowMap || !containerRef.current || mapRef.current) return;
 
     mapRef.current = new maplibregl.Map({
       container: containerRef.current,
@@ -64,7 +83,7 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [routeCoordinates]);
+  }, [routeCoordinates, shouldShowMap]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -145,9 +164,24 @@ export function OverviewMap({ payload }: { payload: TripPayload }) {
         </div>
         <span>{payload.days.length} 天路线</span>
       </div>
-      <div className="overview-map">
-        <div className="overview-map-container" ref={containerRef} />
-      </div>
+      {shouldShowMap ? (
+        <div className="overview-map">
+          <div className="overview-map-container" ref={containerRef} />
+        </div>
+      ) : (
+        <div className="overview-placeholder">
+          <div className="overview-preview-days" aria-label="路线摘要">
+            {dayPoints.slice(0, 4).map((point) => (
+              <span key={point.day.id}>
+                {point.day.label} · {point.day.city}
+              </span>
+            ))}
+          </div>
+          <button type="button" onClick={() => setShouldShowMap(true)}>
+            {isCompact ? "打开总览地图" : "显示总览地图"}
+          </button>
+        </div>
+      )}
     </section>
   );
 }

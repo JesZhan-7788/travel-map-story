@@ -291,6 +291,40 @@ h1 {
   height: 100%;
 }
 
+.overview-placeholder {
+  background: #f3f6f4;
+  border-top: 1px solid rgba(42, 56, 56, 0.08);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.overview-preview-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.overview-preview-days span {
+  background: #ffffff;
+  border: 1px solid rgba(47, 111, 108, 0.14);
+  border-radius: 999px;
+  color: #31544d;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 9px;
+}
+
+.overview-placeholder button {
+  background: #203e38;
+  border: 0;
+  border-radius: 8px;
+  color: #f7f0e6;
+  cursor: pointer;
+  font-weight: 800;
+  min-height: 40px;
+}
+
 .overview-day-marker {
   background: rgba(255, 255, 255, 0.96);
   border: 2px solid #2f6f6c;

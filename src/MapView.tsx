@@ -32,7 +32,10 @@ export function MapView({
 
   const mappedStops = useMemo(() => stops.filter((stop) => stop.coordinates), [stops]);
   const dayOptions = useMemo(
-    () => options.filter((option) => !option.dayId || stops.some((stop) => stop.dayId === option.dayId)),
+    () =>
+      options.filter(
+        (option) => !option.dayId || stops.some((stop) => stop.dayId === option.dayId),
+      ),
     [options, stops],
   );
 

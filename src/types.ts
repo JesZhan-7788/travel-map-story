@@ -7,7 +7,9 @@ export type StopType =
   | "backup"
   | "note";
 
-export type StopStatus = "must" | "optional" | "dropped";
+export type PlanChoice = "must" | "optional" | "dropped";
+export type StopStatus = PlanChoice;
+export type VisitStatus = "pending" | "done" | "skipped";
 
 export interface TripMeta {
   id: string;

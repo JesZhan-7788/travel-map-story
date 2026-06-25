@@ -2,26 +2,41 @@ import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Footprints,
   Hotel,
+  ListChecks,
+  Map,
   MapPin,
   Navigation,
   Route,
   ShieldCheck,
   TrainFront,
   Utensils,
+  X,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { trips, getTripBySlug } from "./data/trips";
 import { MapView } from "./MapView";
-import type { StopStatus, StopType, TripPayload, TripStop } from "./types";
+import type { PlanChoice, StopType, TripPayload, TripStop, VisitStatus } from "./types";
 
-const statusLabels: Record<StopStatus, string> = {
+type StopWithState = TripStop & {
+  planChoice: PlanChoice;
+  visitStatus: VisitStatus;
+};
+
+const planLabels: Record<PlanChoice, string> = {
   must: "必去",
   optional: "可选",
   dropped: "放弃",
+};
+
+const visitLabels: Record<VisitStatus, string> = {
+  pending: "未完成",
+  done: "已完成",
+  skipped: "已跳过",
 };
 
 const typeLabels: Record<StopType, string> = {
@@ -54,15 +69,23 @@ const navigateTo = (path: string) => {
   window.dispatchEvent(new PopStateEvent("popstate"));
 };
 
-const loadStatuses = (tripId: string) => {
+const readStoredRecord = <T extends string>(key: string): Record<string, T> => {
   try {
-    return JSON.parse(localStorage.getItem(`trip-status:${tripId}`) ?? "{}") as Record<
-      string,
-      StopStatus
-    >;
+    return JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, T>;
   } catch {
     return {};
   }
+};
+
+const getNavigationUrl = (stop: TripStop) => {
+  if (stop.coordinates) {
+    const [lng, lat] = stop.coordinates;
+    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    stop.address || stop.name,
+  )}`;
 };
 
 export function App() {
@@ -134,36 +157,72 @@ function TripIndex({ onOpen }: { onOpen: (slug: string) => void }) {
 function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => void }) {
   const [activeDayId, setActiveDayId] = useState<string>(payload.days[0]?.id ?? "");
   const [selectedStopId, setSelectedStopId] = useState<string | null>(payload.stops[0]?.id ?? null);
-  const [mode, setMode] = useState<"planning" | "travel">("planning");
-  const [statuses, setStatuses] = useState<Record<string, StopStatus>>({});
+  const [mode, setMode] = useState<"planning" | "travel">("travel");
+  const [mobileView, setMobileView] = useState<"list" | "map">("list");
+  const [detailExpanded, setDetailExpanded] = useState(false);
+  const [planChoices, setPlanChoices] = useState<Record<string, PlanChoice>>({});
+  const [visitStatuses, setVisitStatuses] = useState<Record<string, VisitStatus>>({});
 
   useEffect(() => {
     setActiveDayId(payload.days[0]?.id ?? "");
     setSelectedStopId(payload.stops[0]?.id ?? null);
-    setStatuses(loadStatuses(payload.trip.id));
+    setMode("travel");
+    setMobileView("list");
+    setDetailExpanded(false);
+    setPlanChoices({
+      ...readStoredRecord<PlanChoice>(`trip-status:${payload.trip.id}`),
+      ...readStoredRecord<PlanChoice>(`trip-plan-choice:${payload.trip.id}`),
+    });
+    setVisitStatuses(readStoredRecord<VisitStatus>(`trip-visit-status:${payload.trip.id}`));
   }, [payload]);
 
   useEffect(() => {
-    localStorage.setItem(`trip-status:${payload.trip.id}`, JSON.stringify(statuses));
-  }, [payload.trip.id, statuses]);
+    localStorage.setItem(`trip-plan-choice:${payload.trip.id}`, JSON.stringify(planChoices));
+  }, [payload.trip.id, planChoices]);
 
-  const activeStops = useMemo(() => {
+  useEffect(() => {
+    localStorage.setItem(`trip-visit-status:${payload.trip.id}`, JSON.stringify(visitStatuses));
+  }, [payload.trip.id, visitStatuses]);
+
+  const activeStops = useMemo<StopWithState[]>(() => {
     return payload.stops
       .filter((stop) => stop.dayId === activeDayId)
-      .map((stop) => ({ ...stop, status: statuses[stop.id] ?? stop.status ?? "must" }))
+      .map((stop) => ({
+        ...stop,
+        planChoice: planChoices[stop.id] ?? stop.status ?? "must",
+        visitStatus: visitStatuses[stop.id] ?? "pending",
+      }))
       .sort((a, b) => a.sequence - b.sequence);
-  }, [activeDayId, payload.stops, statuses]);
+  }, [activeDayId, payload.stops, planChoices, visitStatuses]);
 
   const activeDay = payload.days.find((day) => day.id === activeDayId);
   const selectedStop = activeStops.find((stop) => stop.id === selectedStopId) ?? activeStops[0];
-  const nextStop = activeStops.find((stop) => stop.status !== "dropped");
+  const actionableStops = activeStops.filter((stop) => stop.planChoice !== "dropped");
+  const completedCount = actionableStops.filter((stop) => stop.visitStatus === "done").length;
+  const skippedCount = actionableStops.filter((stop) => stop.visitStatus === "skipped").length;
+  const remainingCount = actionableStops.length - completedCount - skippedCount;
+  const progressTotal = actionableStops.length;
+  const progressPercent = progressTotal ? Math.round(((completedCount + skippedCount) / progressTotal) * 100) : 0;
+  const nextStop =
+    activeStops.find(
+      (stop) => stop.planChoice !== "dropped" && stop.visitStatus === "pending",
+    ) ?? null;
 
-  const setStopStatus = (stopId: string, status: StopStatus) => {
-    setStatuses((current) => ({ ...current, [stopId]: status }));
+  const selectStop = (stopId: string, expand = false) => {
+    setSelectedStopId(stopId);
+    setDetailExpanded(expand);
+  };
+
+  const setPlanChoice = (stopId: string, planChoice: PlanChoice) => {
+    setPlanChoices((current) => ({ ...current, [stopId]: planChoice }));
+  };
+
+  const setVisitStatus = (stopId: string, visitStatus: VisitStatus) => {
+    setVisitStatuses((current) => ({ ...current, [stopId]: visitStatus }));
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell mobile-${mobileView}`}>
       <section className="planner-panel" aria-label="行程时间线">
         <button className="back-button" onClick={onBack} type="button">
           <ArrowLeft size={16} />
@@ -180,20 +239,20 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
           </div>
           <div className="mode-switch" aria-label="切换使用模式">
             <button
-              className={mode === "planning" ? "active" : ""}
-              onClick={() => setMode("planning")}
-              type="button"
-            >
-              <Route size={16} />
-              规划
-            </button>
-            <button
               className={mode === "travel" ? "active" : ""}
               onClick={() => setMode("travel")}
               type="button"
             >
               <Navigation size={16} />
               旅途中
+            </button>
+            <button
+              className={mode === "planning" ? "active" : ""}
+              onClick={() => setMode("planning")}
+              type="button"
+            >
+              <Route size={16} />
+              规划
             </button>
           </div>
         </header>
@@ -206,6 +265,7 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
               onClick={() => {
                 setActiveDayId(day.id);
                 setSelectedStopId(payload.stops.find((stop) => stop.dayId === day.id)?.id ?? null);
+                setDetailExpanded(false);
               }}
               role="tab"
               type="button"
@@ -216,12 +276,37 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
           ))}
         </div>
 
-        {mode === "travel" && nextStop ? (
-          <aside className="next-card">
-            <p>下一站</p>
-            <h2>{nextStop.name}</h2>
-            <span>{nextStop.time || activeDay?.summary}</span>
-          </aside>
+        <div className="mobile-view-switch" aria-label="手机视图切换">
+          <button
+            className={mobileView === "list" ? "active" : ""}
+            onClick={() => setMobileView("list")}
+            type="button"
+          >
+            <ListChecks size={16} />
+            清单
+          </button>
+          <button
+            className={mobileView === "map" ? "active" : ""}
+            onClick={() => setMobileView("map")}
+            type="button"
+          >
+            <Map size={16} />
+            地图
+          </button>
+        </div>
+
+        {mode === "travel" ? (
+          <TravelProgress
+            completedCount={completedCount}
+            nextStop={nextStop}
+            progressPercent={progressPercent}
+            remainingCount={remainingCount}
+            skippedCount={skippedCount}
+            total={progressTotal}
+            onSelectNext={() => {
+              if (nextStop) selectStop(nextStop.id, false);
+            }}
+          />
         ) : null}
 
         <section className="day-summary">
@@ -231,85 +316,249 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
 
         <div className="timeline">
           {activeStops.map((stop) => (
-            <button
-              className={`stop-row ${stop.id === selectedStop?.id ? "active" : ""} ${
-                stop.status === "dropped" ? "dropped" : ""
-              }`}
+            <StopRow
+              isActive={stop.id === selectedStop?.id}
               key={stop.id}
-              onClick={() => setSelectedStopId(stop.id)}
-              type="button"
-            >
-              <span className={`type-dot ${stop.type}`}>{typeIcons[stop.type]}</span>
-              <span className="stop-copy">
-                <strong>{stop.name}</strong>
-                <small>
-                  {stop.time || typeLabels[stop.type]} · {statusLabels[stop.status ?? "must"]}
-                </small>
-              </span>
-            </button>
+              mode={mode}
+              stop={stop}
+              onSelect={() => selectStop(stop.id, false)}
+              onSetVisitStatus={(visitStatus) => setVisitStatus(stop.id, visitStatus)}
+            />
           ))}
         </div>
       </section>
 
       <section className="map-stage" aria-label="地图">
         <MapView
+          key={mobileView}
           options={payload.options}
           selectedStopId={selectedStop?.id ?? null}
           stops={activeStops}
-          onSelectStop={setSelectedStopId}
+          onSelectStop={(stopId) => selectStop(stopId, false)}
         />
       </section>
 
       {selectedStop ? (
         <StopDetail
+          expanded={detailExpanded}
           mode={mode}
           stop={selectedStop}
-          onSetStatus={(status) => setStopStatus(selectedStop.id, status)}
+          onClose={() => setSelectedStopId(null)}
+          onSetExpanded={setDetailExpanded}
+          onSetPlanChoice={(planChoice) => setPlanChoice(selectedStop.id, planChoice)}
+          onSetVisitStatus={(visitStatus) => setVisitStatus(selectedStop.id, visitStatus)}
         />
       ) : null}
     </main>
   );
 }
 
-function StopDetail({
-  mode,
-  stop,
-  onSetStatus,
+function TravelProgress({
+  completedCount,
+  nextStop,
+  progressPercent,
+  remainingCount,
+  skippedCount,
+  total,
+  onSelectNext,
 }: {
-  mode: "planning" | "travel";
-  stop: TripStop;
-  onSetStatus: (status: StopStatus) => void;
+  completedCount: number;
+  nextStop: StopWithState | null;
+  progressPercent: number;
+  remainingCount: number;
+  skippedCount: number;
+  total: number;
+  onSelectNext: () => void;
 }) {
   return (
-    <aside className="detail-panel" aria-label="地点详情">
-      <div className="detail-heading">
-        <span className={`type-pill ${stop.type}`}>{typeLabels[stop.type]}</span>
-        <h2>{stop.name}</h2>
-        {stop.address ? <p>{stop.address}</p> : null}
+    <aside className="travel-progress" aria-label="今日进度">
+      <div className="progress-topline">
+        <div>
+          <p>今日进度</p>
+          <strong>
+            {completedCount}/{total} 已完成
+          </strong>
+        </div>
+        <span>{remainingCount} 个待走</span>
       </div>
-
-      <div className="detail-grid">
-        {stop.time ? (
-          <InfoItem icon={<Clock3 size={16} />} label="时间" value={stop.time} />
-        ) : null}
-        <InfoItem icon={typeIcons[stop.type]} label="类型" value={typeLabels[stop.type]} />
+      <div className="progress-track" aria-hidden="true">
+        <span style={{ width: `${progressPercent}%` }} />
       </div>
+      {nextStop ? (
+        <button className="next-card" onClick={onSelectNext} type="button">
+          <span>下一站</span>
+          <strong>{nextStop.name}</strong>
+          <small>{nextStop.time || typeLabels[nextStop.type]}</small>
+        </button>
+      ) : (
+        <div className="next-card complete">
+          <span>今天清单</span>
+          <strong>已全部处理</strong>
+          <small>{skippedCount ? `其中 ${skippedCount} 个已跳过` : "可以安心收尾了"}</small>
+        </div>
+      )}
+    </aside>
+  );
+}
 
-      {stop.notes ? <p className="notes">{stop.notes}</p> : null}
+function StopRow({
+  isActive,
+  mode,
+  stop,
+  onSelect,
+  onSetVisitStatus,
+}: {
+  isActive: boolean;
+  mode: "planning" | "travel";
+  stop: StopWithState;
+  onSelect: () => void;
+  onSetVisitStatus: (visitStatus: VisitStatus) => void;
+}) {
+  return (
+    <article
+      className={`stop-row ${isActive ? "active" : ""} ${
+        stop.planChoice === "dropped" ? "dropped" : ""
+      } ${stop.visitStatus}`}
+    >
+      <button className="stop-main" onClick={onSelect} type="button">
+        <span className={`type-dot ${stop.type}`}>{typeIcons[stop.type]}</span>
+        <span className="stop-copy">
+          <strong>{stop.name}</strong>
+          <small>
+            {stop.time || typeLabels[stop.type]} · {planLabels[stop.planChoice]}
+            {mode === "travel" ? ` · ${visitLabels[stop.visitStatus]}` : ""}
+          </small>
+        </span>
+      </button>
 
-      {mode === "planning" ? (
-        <div className="status-actions" aria-label="规划状态">
-          <button onClick={() => onSetStatus("must")} type="button">
-            <CheckCircle2 size={16} /> 必去
+      {mode === "travel" && stop.planChoice !== "dropped" ? (
+        <div className="row-actions" aria-label={`${stop.name} 打卡操作`}>
+          <button
+            className={stop.visitStatus === "done" ? "active" : ""}
+            onClick={() => onSetVisitStatus(stop.visitStatus === "done" ? "pending" : "done")}
+            type="button"
+          >
+            <CheckCircle2 size={15} />
+            完成
           </button>
-          <button onClick={() => onSetStatus("optional")} type="button">
-            <Route size={16} /> 可选
-          </button>
-          <button onClick={() => onSetStatus("dropped")} type="button">
-            <XCircle size={16} /> 放弃
+          <button
+            className={stop.visitStatus === "skipped" ? "active muted" : "muted"}
+            onClick={() =>
+              onSetVisitStatus(stop.visitStatus === "skipped" ? "pending" : "skipped")
+            }
+            type="button"
+          >
+            <XCircle size={15} />
+            跳过
           </button>
         </div>
       ) : null}
+    </article>
+  );
+}
+
+function StopDetail({
+  expanded,
+  mode,
+  stop,
+  onClose,
+  onSetExpanded,
+  onSetPlanChoice,
+  onSetVisitStatus,
+}: {
+  expanded: boolean;
+  mode: "planning" | "travel";
+  stop: StopWithState;
+  onClose: () => void;
+  onSetExpanded: (expanded: boolean) => void;
+  onSetPlanChoice: (planChoice: PlanChoice) => void;
+  onSetVisitStatus: (visitStatus: VisitStatus) => void;
+}) {
+  return (
+    <aside className={`detail-panel ${expanded ? "expanded" : "collapsed"}`} aria-label="地点详情">
+      <div className="detail-peek">
+        <button className="peek-main" onClick={() => onSetExpanded(!expanded)} type="button">
+          <span className={`type-dot ${stop.type}`}>{typeIcons[stop.type]}</span>
+          <span>
+            <small>{stop.time || typeLabels[stop.type]}</small>
+            <strong>{stop.name}</strong>
+          </span>
+          <ChevronDown size={18} />
+        </button>
+        <a className="icon-action" href={getNavigationUrl(stop)} rel="noreferrer" target="_blank">
+          <Navigation size={17} />
+          导航
+        </a>
+        <button className="icon-action close" onClick={onClose} type="button" aria-label="关闭详情">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="detail-body">
+        <div className="detail-heading">
+          <span className={`type-pill ${stop.type}`}>{typeLabels[stop.type]}</span>
+          <h2>{stop.name}</h2>
+          {stop.address ? <p>{stop.address}</p> : null}
+        </div>
+
+        <div className="detail-grid">
+          {stop.time ? (
+            <InfoItem icon={<Clock3 size={16} />} label="时间" value={stop.time} />
+          ) : null}
+          <InfoItem icon={typeIcons[stop.type]} label="类型" value={typeLabels[stop.type]} />
+          <InfoItem icon={<ShieldCheck size={16} />} label="状态" value={visitLabels[stop.visitStatus]} />
+        </div>
+
+        {stop.notes ? <p className="notes">{stop.notes}</p> : null}
+
+        {mode === "travel" ? (
+          <div className="status-actions travel-actions" aria-label="旅行进度">
+            <button
+              className={stop.visitStatus === "done" ? "active" : ""}
+              onClick={() => onSetVisitStatus(stop.visitStatus === "done" ? "pending" : "done")}
+              type="button"
+            >
+              <CheckCircle2 size={16} /> 完成
+            </button>
+            <button
+              className={stop.visitStatus === "skipped" ? "active" : ""}
+              onClick={() =>
+                onSetVisitStatus(stop.visitStatus === "skipped" ? "pending" : "skipped")
+              }
+              type="button"
+            >
+              <XCircle size={16} /> 跳过
+            </button>
+            <a href={getNavigationUrl(stop)} rel="noreferrer" target="_blank">
+              <Navigation size={16} /> 导航
+            </a>
+          </div>
+        ) : (
+          <div className="status-actions" aria-label="规划状态">
+            <button
+              className={stop.planChoice === "must" ? "active" : ""}
+              onClick={() => onSetPlanChoice("must")}
+              type="button"
+            >
+              <CheckCircle2 size={16} /> 必去
+            </button>
+            <button
+              className={stop.planChoice === "optional" ? "active" : ""}
+              onClick={() => onSetPlanChoice("optional")}
+              type="button"
+            >
+              <Route size={16} /> 可选
+            </button>
+            <button
+              className={stop.planChoice === "dropped" ? "active" : ""}
+              onClick={() => onSetPlanChoice("dropped")}
+              type="button"
+            >
+              <XCircle size={16} /> 放弃
+            </button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

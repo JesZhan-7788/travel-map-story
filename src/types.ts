@@ -49,14 +49,31 @@ export interface TripStop {
   status?: StopStatus;
 }
 
+export interface TripStay {
+  id: string;
+  dayId: string;
+  name: string;
+  checkIn?: string;
+  checkOut?: string;
+  nights?: string;
+  address?: string;
+  area?: string;
+  coordinates?: [number, number];
+  notes?: string;
+}
+
 export interface TripLeg {
   id: string;
   dayId: string;
   fromStopId?: string;
   toStopId?: string;
+  title?: string;
   mode: string;
+  route?: string;
   duration?: string;
   cost?: string;
+  coordinates?: [number, number][];
+  tip?: string;
   notes?: string;
 }
 
@@ -73,6 +90,7 @@ export interface TripOption {
 export interface TripPayload {
   trip: TripMeta;
   days: TripDay[];
+  stays?: TripStay[];
   stops: TripStop[];
   legs: TripLeg[];
   options: TripOption[];

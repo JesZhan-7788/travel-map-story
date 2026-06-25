@@ -21,7 +21,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { trips, getTripBySlug } from "./data/trips";
 import { MapView } from "./MapView";
-import type { PlanChoice, StopType, TripPayload, TripStop, VisitStatus } from "./types";
+import { OverviewMap } from "./OverviewMap";
+import type { PlanChoice, StopType, TripLeg, TripPayload, TripStay, TripStop, VisitStatus } from "./types";
 
 type StopWithState = TripStop & {
   planChoice: PlanChoice;
@@ -89,6 +90,15 @@ const getNavigationUrl = (stop: TripStop) => {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     stop.address || stop.name,
   )}`;
+};
+
+const getCoordinateNavigationUrl = (name: string, coordinates?: [number, number], address?: string) => {
+  if (coordinates) {
+    const [lng, lat] = coordinates;
+    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || name)}`;
 };
 
 const getDurationSuggestion = (stop: TripStop) => {
@@ -221,6 +231,8 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
   }, [activeDayId, payload.stops, planChoices, visitStatuses]);
 
   const activeDay = payload.days.find((day) => day.id === activeDayId);
+  const activeStay = payload.stays?.find((stay) => stay.dayId === activeDayId) ?? null;
+  const activeLegs = payload.legs.filter((leg) => leg.dayId === activeDayId);
   const selectedStop = selectedStopId
     ? activeStops.find((stop) => stop.id === selectedStopId) ?? null
     : null;
@@ -284,6 +296,8 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
           </div>
         </header>
 
+        <OverviewMap payload={payload} />
+
         <div className="day-tabs" role="tablist" aria-label="选择日期">
           {payload.days.map((day) => (
             <button
@@ -341,17 +355,26 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
           <h2>{activeDay?.summary}</h2>
         </section>
 
+        {activeStay ? <StayCard stay={activeStay} /> : null}
+
         <div className="timeline">
-          {activeStops.map((stop) => (
-            <StopRow
-              isActive={stop.id === selectedStop?.id}
-              key={stop.id}
-              mode={mode}
-              stop={stop}
-              onSelect={() => selectStop(stop.id, true)}
-              onSetVisitStatus={(visitStatus) => setVisitStatus(stop.id, visitStatus)}
-            />
-          ))}
+          {activeStops.map((stop) => {
+            const followingLegs = activeLegs.filter((leg) => leg.fromStopId === stop.id);
+            return (
+              <div className="timeline-item" key={stop.id}>
+                <StopRow
+                  isActive={stop.id === selectedStop?.id}
+                  mode={mode}
+                  stop={stop}
+                  onSelect={() => selectStop(stop.id, true)}
+                  onSetVisitStatus={(visitStatus) => setVisitStatus(stop.id, visitStatus)}
+                />
+                {followingLegs.map((leg) => (
+                  <TransportCard key={leg.id} leg={leg} />
+                ))}
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -377,6 +400,60 @@ function TripDetail({ payload, onBack }: { payload: TripPayload; onBack: () => v
         />
       ) : null}
     </main>
+  );
+}
+
+function StayCard({ stay }: { stay: TripStay }) {
+  return (
+    <aside className="stay-card" aria-label="今日住宿">
+      <div className="stay-card-heading">
+        <span>
+          <Hotel size={17} />
+        </span>
+        <div>
+          <p>今日住宿</p>
+          <h3>{stay.name}</h3>
+        </div>
+      </div>
+      <div className="stay-meta">
+        {stay.nights ? <span>{stay.nights}</span> : null}
+        {stay.checkIn ? <span>入住：{stay.checkIn}</span> : null}
+        {stay.checkOut ? <span>退房：{stay.checkOut}</span> : null}
+      </div>
+      {stay.area || stay.address ? <p className="stay-area">{stay.address || stay.area}</p> : null}
+      {stay.notes ? <p className="stay-notes">{stay.notes}</p> : null}
+      <a
+        className="stay-nav"
+        href={getCoordinateNavigationUrl(stay.name, stay.coordinates, stay.address || stay.area)}
+        rel="noreferrer"
+        target="_blank"
+      >
+        <Navigation size={16} />
+        导航到住宿
+      </a>
+    </aside>
+  );
+}
+
+function TransportCard({ leg }: { leg: TripLeg }) {
+  return (
+    <aside className="transport-card" aria-label="交通建议">
+      <div className="transport-title">
+        <span>
+          <TrainFront size={15} />
+        </span>
+        <div>
+          <p>{leg.mode}</p>
+          <h3>{leg.title || "交通建议"}</h3>
+        </div>
+      </div>
+      {leg.route ? <p className="transport-route">{leg.route}</p> : null}
+      <div className="transport-meta">
+        {leg.duration ? <span>{leg.duration}</span> : null}
+        {leg.tip ? <span>{leg.tip}</span> : null}
+      </div>
+      {leg.notes ? <p className="transport-notes">{leg.notes}</p> : null}
+    </aside>
   );
 }
 
